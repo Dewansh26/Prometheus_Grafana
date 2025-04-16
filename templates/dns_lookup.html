@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DNS to IP Lookup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-o9N1j8MkQJIRN1FzS4HcwZ8kHGjDg9RK2S0kZQ+1pUc="
+    crossorigin=""
+  />
+  <style>
+    #map {
+      height: 250px;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-2xl bg-gray-800 p-6 rounded-lg shadow-lg space-y-4">
+    <h1 class="text-2xl font-semibold text-center">🌐 DNS to IP Lookup</h1>
+
+    <div class="flex gap-2">
+      <input
+        type="text"
+        id="domainInput"
+        placeholder="Enter domain name"
+        class="p-2 flex-1 rounded text-black"
+      >
+      <button
+        onclick="resolveDomain()"
+        class="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700"
+      >
+        Resolve IP
+      </button>
+    </div>
+
+    <div id="result" class="text-yellow-300 text-sm space-y-2 hidden"></div>
+
+    <div id="loading" class="text-center hidden text-gray-400">⏳ Loading...</div>
+    <div id="map" class="rounded mt-4 hidden"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <script>
+    const input = document.getElementById('domainInput');
+    const resultBox = document.getElementById('result');
+    const loading = document.getElementById('loading');
+    const mapContainer = document.getElementById('map');
+    let map = null;
+
+    input.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        resolveDomain();
+      }
+    });
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert("IP copied to clipboard!");
+      });
+    }
+
+    async function resolveDomain() {
+      const domain = input.value.trim();
+      resultBox.classList.add("hidden");
+      mapContainer.classList.add("hidden");
+      resultBox.innerHTML = '';
+      if (!domain) {
+        resultBox.textContent = "Please enter a domain.";
+        resultBox.classList.remove("hidden");
+        return;
+      }
+
+      loading.classList.remove("hidden");
+
+      try {
+        const res = await fetch(`/api/resolve_domain?domain=${domain}`);
+        const data = await res.json();
+        loading.classList.add("hidden");
+
+        if (data.status === "success") {
+          resultBox.innerHTML = `
+            <div><strong>IP Address:</strong> ${data.ip}
+              <button onclick="copyToClipboard('${data.ip}')" class="ml-2 text-blue-400 underline">Copy</button>
+            </div>
+            <div><strong>Country:</strong> <img src="https://flagsapi.com/${data.countryCode || 'US'}/flat/24.png" class="inline"> ${data.country}</div>
+            <div><strong>Region:</strong> ${data.region}</div>
+            <div><strong>City:</strong> ${data.city}</div>
+            <div><strong>ZIP:</strong> ${data.zip}</div>
+            <div><strong>Timezone:</strong> ${data.timezone}</div>
+            <div><strong>ISP:</strong> ${data.isp}</div>
+            <div><strong>Coordinates:</strong> ${data.lat}, ${data.lon}</div>
+          `;
+          resultBox.classList.remove("hidden");
+
+          // Show map
+          mapContainer.classList.remove("hidden");
+          if (!map) {
+            map = L.map('map').setView([data.lat, data.lon], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+          } else {
+            map.setView([data.lat, data.lon], 10);
+          }
+          L.marker([data.lat, data.lon]).addTo(map).bindPopup(`${data.city}, ${data.country}`).openPopup();
+        } else {
+          resultBox.textContent = data.error || "Failed to fetch data.";
+          resultBox.classList.remove("hidden");
+        }
+      } catch (e) {
+        loading.classList.add("hidden");
+        resultBox.textContent = "Server error.";
+        resultBox.classList.remove("hidden");
+      }
+    }
+  </script>
+</body>
+</html>

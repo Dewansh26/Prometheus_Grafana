@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌍 IP Geolocation Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <style>
+    #map { height: 300px; border-radius: 12px; }
+  </style>
+</head>
+<body class="transition-all duration-300 min-h-screen flex items-center justify-center bg-white text-black" id="body">
+
+  <!-- Dark Mode Toggle -->
+  <button id="toggleDark" class="absolute top-5 right-5 bg-white text-black rounded-full w-10 h-10 flex items-center justify-center shadow-md">
+    🌙
+  </button>
+
+  <!-- Main Container -->
+  <div class="bg-gray-900 bg-opacity-90 text-white rounded-2xl p-6 shadow-2xl w-[95%] max-w-3xl">
+
+    <!-- Title -->
+    <h1 class="text-2xl font-bold text-center mb-4">🌍 IP Geolocation Tracker</h1>
+
+    <!-- Input Field and Button -->
+    <div class="flex mb-4">
+      <input id="ipInput" type="text" placeholder="Enter IP address..." class="flex-1 p-2 rounded-l-md text-black focus:outline-none" />
+      <button onclick="trackIP()" class="bg-blue-600 hover:bg-blue-800 px-4 rounded-r-md">Track</button>
+    </div>
+
+    <!-- Info Display -->
+    <div class="text-sm space-y-1 mb-4" id="infoBox"></div>
+
+    <!-- Map -->
+    <div id="map" class="mb-4"></div>
+
+    <!-- History and Export -->
+    <div class="mt-6">
+      <h2 class="text-lg font-semibold mb-2">🕘 IP Search History:</h2>
+      <ul id="historyList" class="list-disc pl-5 space-y-1 text-blue-300"></ul>
+      <div class="mt-2 flex gap-3">
+        <button onclick="exportHistory('json')" class="bg-green-600 px-3 py-1 rounded">Export JSON</button>
+        <button onclick="exportHistory('csv')" class="bg-yellow-500 px-3 py-1 rounded">Export CSV</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let map, marker;
+
+    async function trackIP(ipInput = null) {
+      const ip = ipInput || document.getElementById("ipInput").value.trim();
+      const infoBox = document.getElementById("infoBox");
+      if (!ip) return;
+
+      infoBox.innerHTML = "Loading...";
+
+      try {
+        const res = await fetch(`/api/lookup?ip=${ip}`);
+        const data = await res.json();
+
+        if (data.status === "success") {
+          const flag = `https://flagcdn.com/48x36/${data.countryCode.toLowerCase()}.png`;
+          infoBox.innerHTML = `
+            <p><strong>IP:</strong> ${data.query}</p>
+            <p><strong>Country:</strong> ${data.country} <img src="${flag}" class="inline h-4" /></p>
+            <p><strong>Region:</strong> ${data.regionName}</p>
+            <p><strong>City:</strong> ${data.city}</p>
+            <p><strong>ZIP:</strong> ${data.zip}</p>
+            <p><strong>Timezone:</strong> ${data.timezone}</p>
+            <p><strong>ISP:</strong> ${data.isp}</p>
+            <p><strong>Latitude:</strong> ${data.lat}</p>
+            <p><strong>Longitude:</strong> ${data.lon}</p>
+          `;
+
+          showMap(data.lat, data.lon);
+          renderHistory();
+        } else {
+          infoBox.innerHTML = `<p class="text-red-400">${data.message || data.error}</p>`;
+        }
+      } catch (e) {
+        infoBox.innerHTML = `<p class="text-red-400">Network error. Try again.</p>`;
+      }
+    }
+
+    function showMap(lat, lon) {
+      if (!map) {
+        map = L.map('map').setView([lat, lon], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        marker = L.marker([lat, lon]).addTo(map);
+      } else {
+        map.setView([lat, lon], 10);
+        marker.setLatLng([lat, lon]);
+      }
+    }
+
+    async function renderHistory() {
+      const res = await fetch('/api/history');
+      const history = await res.json();
+      const list = document.getElementById("historyList");
+      list.innerHTML = "";
+      history.forEach(ip => {
+        const li = document.createElement("li");
+        li.textContent = ip;
+        li.classList.add("cursor-pointer", "hover:underline");
+        li.onclick = () => trackIP(ip);
+        list.appendChild(li);
+      });
+    }
+
+    async function exportHistory(type) {
+      const res = await fetch('/api/history');
+      const history = await res.json();
+      let content = "";
+      let mimeType = "";
+
+      if (type === "json") {
+        content = JSON.stringify(history, null, 2);
+        mimeType = "application/json";
+      } else {
+        content = "IP Address\n" + history.join("\n");
+        mimeType = "text/csv";
+      }
+
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ip_history.${type}`;
+      link.click();
+    }
+
+    // Dark Mode
+    const body = document.getElementById("body");
+    const darkToggle = document.getElementById("toggleDark");
+
+    function applyTheme() {
+      const dark = localStorage.getItem("darkMode") === "true";
+      body.classList.toggle("bg-black", dark);
+      body.classList.toggle("text-white", dark);
+      body.classList.toggle("bg-white", !dark);
+      body.classList.toggle("text-black", !dark);
+      darkToggle.innerHTML = dark ? "🌞" : "🌙";
+    }
+
+    darkToggle.onclick = () => {
+      const isDark = body.classList.contains("bg-black");
+      localStorage.setItem("darkMode", !isDark);
+      applyTheme();
+    };
+
+    document.getElementById("ipInput").addEventListener("keyup", e => {
+      if (e.key === "Enter") trackIP();
+    });
+
+    window.onload = () => {
+      applyTheme();
+      renderHistory();
+      fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => trackIP(data.ip));
+    };
+  </script>
+</body>
+</html>
